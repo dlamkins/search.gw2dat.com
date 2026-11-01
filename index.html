@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <meta charset="utf-8" />
+        <title>Gw2Dat Texture Search</title>
+        <style>
+            @import url(https://fonts.googleapis.com/css?family=Lato:400,700,300);
+            body {
+                font-family: "Lato", sans-serif;
+            }
+
+            body {
+                padding:0;
+                margin:0;
+            }
+
+            form {
+                background-color: #303846;
+                position:static;
+                top:0;
+                left:0;
+                right:0;
+                padding:1.5em 2em;
+            }
+
+            .file-upload-wrapper {
+                position: relative;
+                width: 100%;
+                height: 60px;
+            }
+
+            .file-upload-wrapper:after {
+                content: attr(data-text);
+                font-size: 18px;
+                position: absolute;
+                top: 0;
+                left: 0;
+                background: #fff;
+                padding: 10px 15px;
+                display: block;
+                width: calc(100% - 40px);
+                pointer-events: none;
+                z-index: 20;
+                height: 40px;
+                line-height: 40px;
+                color: #999;
+                border-radius: 5px 10px 10px 5px;
+                font-weight: 300;
+            }
+
+            .file-upload-wrapper:before {
+                content: "Upload";
+                position: absolute;
+                top: 0;
+                right: 0;
+                display: inline-block;
+                height: 60px;
+                background: #4daf7c;
+                color: #fff;
+                font-weight: 700;
+                z-index: 25;
+                font-size: 16px;
+                line-height: 60px;
+                padding: 0 15px;
+                text-transform: uppercase;
+                pointer-events: none;
+                border-radius: 0 5px 5px 0;
+            }
+
+            .file-upload-wrapper:hover:before {
+                background: #3d8c63;
+            }
+
+            .file-upload-wrapper input {
+                opacity: 0;
+                position: absolute;
+                top: 0;
+                right: 0;
+                bottom: 0;
+                left: 0;
+                z-index: 99;
+                height: 40px;
+                margin: 0;
+                padding: 0;
+                display: block;
+                cursor: pointer;
+                width: 100%;
+            }
+        </style>
+    </head>
+    <body>
+        <form id="uploadForm">
+            <div class="file-upload-wrapper" data-text="Upload Guild Wars 2 Image or Paste From Clipboard">
+                <input type="file" name="image" id="imageUploader" accept="image/*" />
+            </div>
+            <div style="padding-top:1em;">
+                <a target="_blank" style="color:white;text-decoration:none;" href="https://blish-hud.notion.site/blish-hud/Overview-of-search-gw2dat-com-71792757b6f84abd8071dcb9fcfd3d2a">&gt; Read the Docs 📖</a>
+            </div>
+        </form>
+        <div style="padding: 2em;" id="results">
+            <center>No results</center>
+        </div>
+        <script>
+            const fileInput = document.getElementById("imageUploader");
+            const resultsEl = document.getElementById("results");
+            const worker    = new Worker("search-worker.js");
+
+            let latestSearchId = 0;
+
+            function showMessage(message) {
+                const center = document.createElement("center");
+                center.textContent = message;
+                resultsEl.replaceChildren(center);
+            }
+
+            function showResults(results) {
+                if (results.length === 0) {
+                    showMessage("No results");
+                    return;
+                }
+
+                resultsEl.replaceChildren(...results.map(({ asset }) => {
+                    const link = document.createElement("a");
+                    link.target = "_blank";
+                    link.href = `https://assets.gw2dat.com/${asset}.png`;
+
+                    const image = document.createElement("img");
+                    image.src = link.href;
+                    image.title = asset;
+
+                    link.append(image);
+                    return link;
+                }));
+            }
+
+            function startSearch(file) {
+                showMessage("Searching...");
+                worker.postMessage({ searchId: ++latestSearchId, file });
+            }
+
+            worker.onmessage = ({ data: { searchId, results, error } }) => {
+                if (searchId !== latestSearchId) {
+                    return;
+                }
+
+                if (error) {
+                    showMessage("An error occurred processing your image.");
+                } else {
+                    showResults(results);
+                }
+            };
+
+            worker.onerror = () => showMessage("Search could not be started.");
+
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length > 0) {
+                    startSearch(fileInput.files[0]);
+                    fileInput.value = "";
+                }
+            });
+
+            window.addEventListener('paste', e => {
+                if (e.clipboardData.files.length > 0) {
+                    startSearch(e.clipboardData.files[0]);
+                }
+            });
+        </script>
+    </body>
+</html>
