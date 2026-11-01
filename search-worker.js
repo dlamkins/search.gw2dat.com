@@ -5,6 +5,7 @@ const MAX_RESULTS = 200;
 const MAX_SIZE_RATIO = 2; // Assets more than this many times larger than the image are skipped
 
 let indexPromise = null;
+let indexLoaded = false;
 
 function getIndex() {
     if (indexPromise === null) {
@@ -57,6 +58,8 @@ async function loadIndex() {
         const digest = digests.subarray(i * DIGEST_SIZE, (i + 1) * DIGEST_SIZE);
         energies[i] = centerDigest(digest, centered, i * DIGEST_SIZE);
     }
+
+    indexLoaded = true;
 
     return { count, assets, dimensions, centered, energies };
 }
@@ -116,19 +119,28 @@ function search(index, digest, width, height) {
         }
     }
 
-    return results.sort((a, b) => b.score - a.score).slice(0, MAX_RESULTS);
+    return results.sort((a, b) => b.score - a.score);
 }
 
 self.onmessage = async ({ data: { searchId, file } }) => {
-    try {
-        const index = await getIndex();
-        const { rgba, width, height } = await decodeImage(file);
-        const results = search(index, computeDigest(rgba, width, height), width, height);
+    let index = null;
 
-        self.postMessage({ searchId, results });
+    try {
+        if (!indexLoaded) {
+            self.postMessage({ searchId, status: 'downloading' });
+            index = await getIndex();
+            self.postMessage({ searchId, status: 'searching' });
+        } else {
+            index = await getIndex();
+        }
+
+        const { rgba, width, height } = await decodeImage(file);
+        const matches = search(index, computeDigest(rgba, width, height), width, height);
+
+        self.postMessage({ searchId, results: matches.slice(0, MAX_RESULTS), total: matches.length });
     } catch (error) {
         console.error(error);
-        self.postMessage({ searchId, error: error.message });
+        self.postMessage({ searchId, error: index === null ? 'index' : 'image' });
     }
 };
 

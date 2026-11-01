@@ -87,6 +87,43 @@
                 cursor: pointer;
                 width: 100%;
             }
+
+            #status {
+                display: flex;
+                align-items: center;
+                gap: 1em;
+                padding: 1em 2em;
+                background-color: #eef1f5;
+                color: #303846;
+                font-size: 18px;
+            }
+
+            #status[hidden], #statusImage[hidden], #statusSpinner[hidden] {
+                display: none;
+            }
+
+            #statusImage {
+                max-width: 96px;
+                max-height: 96px;
+                border-radius: 5px;
+                background-color: #303846;
+            }
+
+            #statusSpinner {
+                flex: none;
+                width: 20px;
+                height: 20px;
+                border: 3px solid #c5ccd6;
+                border-top-color: #4daf7c;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
         </style>
     </head>
     <body>
@@ -98,26 +135,51 @@
                 <a target="_blank" style="color:white;text-decoration:none;" href="https://blish-hud.notion.site/blish-hud/Overview-of-search-gw2dat-com-71792757b6f84abd8071dcb9fcfd3d2a">&gt; Read the Docs 📖</a>
             </div>
         </form>
+        <div id="status" hidden>
+            <img id="statusImage" alt="The image you searched for" hidden />
+            <span id="statusSpinner" hidden></span>
+            <span id="statusText" role="status"></span>
+        </div>
         <div style="padding: 2em;" id="results">
             <center>No results</center>
         </div>
         <script>
-            const fileInput = document.getElementById("imageUploader");
-            const resultsEl = document.getElementById("results");
-            const worker    = new Worker("search-worker.js");
+            const fileInput     = document.getElementById("imageUploader");
+            const resultsEl     = document.getElementById("results");
+            const statusEl      = document.getElementById("status");
+            const statusImageEl = document.getElementById("statusImage");
+            const statusSpinner = document.getElementById("statusSpinner");
+            const statusTextEl  = document.getElementById("statusText");
+            const worker        = new Worker("search-worker.js");
+
+            const MIN_BUSY_MS = 300; // Searches are quick enough to otherwise look like nothing happened
+
+            const STATUS_MESSAGES = {
+                downloading: "Image received. Downloading the search index...",
+                searching: "Image received. Searching..."
+            };
+
+            const ERROR_MESSAGES = {
+                index: "The search index could not be downloaded. Please try again.",
+                image: "That file could not be read as an image."
+            };
 
             let latestSearchId = 0;
+            let busyUntil = 0;
 
-            function showMessage(message) {
-                const center = document.createElement("center");
-                center.textContent = message;
-                resultsEl.replaceChildren(center);
+            function setStatus(message, busy) {
+                statusEl.hidden = false;
+                statusSpinner.hidden = !busy;
+                statusTextEl.textContent = message;
             }
 
-            function showResults(results) {
-                if (results.length === 0) {
-                    showMessage("No results");
-                    return;
+            function showResults(results, total) {
+                if (total === 0) {
+                    setStatus("No matches found for this image.", false);
+                } else if (total > results.length) {
+                    setStatus(`Showing the top ${results.length} of ${total} matches.`, false);
+                } else {
+                    setStatus(`Found ${total} ${total === 1 ? "match" : "matches"}.`, false);
                 }
 
                 resultsEl.replaceChildren(...results.map(({ asset }) => {
@@ -135,23 +197,43 @@
             }
 
             function startSearch(file) {
-                showMessage("Searching...");
+                URL.revokeObjectURL(statusImageEl.src);
+                statusImageEl.src = URL.createObjectURL(file);
+                statusImageEl.hidden = false;
+
+                resultsEl.replaceChildren();
+                setStatus(STATUS_MESSAGES.searching, true);
+                busyUntil = performance.now() + MIN_BUSY_MS;
+
                 worker.postMessage({ searchId: ++latestSearchId, file });
             }
 
-            worker.onmessage = ({ data: { searchId, results, error } }) => {
+            statusImageEl.onerror = () => statusImageEl.hidden = true;
+
+            worker.onmessage = ({ data: { searchId, status, results, total, error } }) => {
                 if (searchId !== latestSearchId) {
                     return;
                 }
 
-                if (error) {
-                    showMessage("An error occurred processing your image.");
-                } else {
-                    showResults(results);
+                if (status) {
+                    setStatus(STATUS_MESSAGES[status], true);
+                    return;
                 }
+
+                setTimeout(() => {
+                    if (searchId !== latestSearchId) {
+                        return;
+                    }
+
+                    if (error) {
+                        setStatus(ERROR_MESSAGES[error], false);
+                    } else {
+                        showResults(results, total);
+                    }
+                }, busyUntil - performance.now());
             };
 
-            worker.onerror = () => showMessage("Search could not be started.");
+            worker.onerror = () => setStatus("Search could not be started.", false);
 
             fileInput.addEventListener('change', () => {
                 if (fileInput.files.length > 0) {
