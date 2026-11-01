@@ -173,7 +173,8 @@
                 statusTextEl.textContent = message;
             }
 
-            function showResults(results, total) {
+            // The page can update before a cached worker does, and older workers don't send total.
+            function showResults(results, total = results.length) {
                 if (total === 0) {
                     setStatus("No matches found for this image.", false);
                 } else if (total > results.length) {
@@ -226,7 +227,7 @@
                     }
 
                     if (error) {
-                        setStatus(ERROR_MESSAGES[error], false);
+                        setStatus(ERROR_MESSAGES[error] ?? ERROR_MESSAGES.image, false);
                     } else {
                         showResults(results, total);
                     }
